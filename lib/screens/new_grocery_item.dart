@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shopping_list/data/categories.dart';
 import 'package:shopping_list/models/category.dart';
 import 'package:shopping_list/models/grocery_item.dart';
+import 'package:http/http.dart' as http;
 
 class NewGroceryItem extends StatefulWidget {
   const NewGroceryItem({super.key});
@@ -15,14 +18,59 @@ class _NewGroceryItemState extends State<NewGroceryItem> {
   int? enteredQuantity;
   Category selectedCategory = categories[Categories.vegetables]!;
   final _formKey = GlobalKey<FormState>();
-  void _addNewItem() {
+  bool _isSending = false;
+  void _addNewItem() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
+      setState(() {
+        _isSending = true;
+      });
+      // GroceryItem newGrocery = GroceryItem(
+      //   id: DateTime.now().toString(),
+      //   name: enteredGroceryName!,
+      //   quantity: enteredQuantity!,
+      //   category: selectedCategory,
+      // );
+      final Uri url = Uri.https(
+          'flutter-prep-925fb-default-rtdb.firebaseio.com',
+          'shopping-list.json');
+      final headers = {'Content-Type': 'application/json'};
+      final body = jsonEncode({
+        'name': enteredGroceryName,
+        'quantity': enteredQuantity,
+        'category': selectedCategory.name,
+      });
+      http.Response response;
+      try {
+        response = await http.post(url, headers: headers, body: body);
+      } catch (error) {
+        //show snackbar
+        print("error occered while adding item");
+        print(error);
+        return;
+      } finally {
+        setState(() {
+          _isSending = false;
+        });
+      }
+      if(response.statusCode >= 400) {
+        //show snackbar
+        print("API failed with status code ${response.statusCode}");
+        return;
+      }
+      print(response.body);
+      if (response.body == 'null') {
+        return;
+      }
       GroceryItem newGrocery = GroceryItem(
-          id: DateTime.now().toString(),
-          name: enteredGroceryName!,
-          quantity: enteredQuantity!,
-          category: selectedCategory);
+        id: jsonDecode(response.body)['name'],
+        name: enteredGroceryName!,
+        quantity: enteredQuantity!,
+        category: selectedCategory,
+      );
+      if (!context.mounted) {
+        return;
+      }
       Navigator.of(context).pop(newGrocery);
     }
   }
@@ -111,14 +159,18 @@ class _NewGroceryItemState extends State<NewGroceryItem> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: () {
-                      _formKey.currentState!.reset();
-                    },
+                    onPressed: _isSending
+                        ? null
+                        : () {
+                            _formKey.currentState!.reset();
+                          },
                     child: const Text('Reset'),
                   ),
                   ElevatedButton(
-                    onPressed: _addNewItem,
-                    child: const Text("Add Item"),
+                    onPressed: _isSending ? null : _addNewItem,
+                    child: _isSending
+                        ? const CircularProgressIndicator()
+                        : const Text("Add Item"),
                   ),
                 ],
               )
